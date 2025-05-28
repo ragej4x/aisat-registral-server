@@ -26,10 +26,10 @@ def after_request(response):
 
 def get_db():
     connection = mysql.connector.connect(
-        host='sql12.freesqldatabase.com',
-        user='sql12781768', 
-        password='Yi91dZJIfq',
-        database='sql12781768',
+        host='jimboyaczon.mysql.pythonanywhere-services.com',
+        user='jimboyaczon', 
+        password='fk9lratv',
+        database='jimboyaczon$aisat-registral-db',
         autocommit=True
     )
     return connection
