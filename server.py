@@ -1137,6 +1137,12 @@ def call_request():
         if not request_id:
             return jsonify({'message': 'Request ID is required'}), 400
             
+        # Ensure request_id is converted to integer
+        try:
+            request_id = int(request_id)
+        except (ValueError, TypeError):
+            return jsonify({'message': 'Request ID must be a numeric value'}), 400
+            
         db = get_db()
         cursor = db.cursor()
         cursor.execute("SELECT * FROM users WHERE id = %s", (request_id,))
@@ -1147,17 +1153,28 @@ def call_request():
             
         admin_id = request.headers.get('Authorization')
         
-        # When a request is first called, it should have no timestamp
+        # Check if there's an existing call_log entry
+        cursor.execute("SELECT id FROM call_log WHERE request_id = %s", (request_id,))
+        existing_call = cursor.fetchone()
+        
+        # When a request is first called, it should have null timestamp
         # The timestamp will only be set when the admin clicks "SKIP"
-        try:
+        if existing_call:
+            # Update existing call to have NULL timestamp
+            cursor.execute(
+                "UPDATE call_log SET timestamp = NULL WHERE request_id = %s",
+                (request_id,)
+            )
+            db.commit()
+            print(f"Call updated: Admin {admin_id} called request {request_id} (reset timer)")
+        else:
+            # Insert new call with NULL timestamp
             cursor.execute(
                 "INSERT INTO call_log (admin_id, request_id, window_number, timestamp) VALUES (%s, %s, %s, NULL)",
                 (admin_id, request_id, "NONE")
             )
             db.commit()
             print(f"Call logged: Admin {admin_id} called request {request_id} (no timer started)")
-        except mysql.connector.Error as log_err:
-            print(f"Error logging call: {log_err}")
         
         cursor.execute("SELECT request_id FROM users WHERE id = %s", (request_id,))
         request_id_value = cursor.fetchone()[0]
@@ -1333,7 +1350,9 @@ def get_current_calls():
             SELECT c.request_id, c.timestamp, u.request_id as display_id, u.idno, u.name
             FROM call_log c
             LEFT JOIN users u ON c.request_id = u.id
-            ORDER BY c.timestamp DESC
+            ORDER BY 
+                CASE WHEN c.timestamp IS NULL THEN 0 ELSE 1 END,  -- NULL timestamps (calls) first
+                c.timestamp DESC  -- Then most recent timers
             LIMIT 10
         """)
         
@@ -1360,29 +1379,18 @@ def get_current_calls():
                     'request_id_display': display_id,
                     'timestamp': timestamp_value,
                     'idno': idno,
-                    'name': name
+                    'name': name,
+                    'status': 'timing' if timestamp else 'calling'
                 })
             
         return jsonify(result), 200
             
     except mysql.connector.Error as err:
         print(f"Database error: {err}")
-        return jsonify([
-            {
-                'request_id': 64,
-                'request_id_display': 'RE-0064',
-                'timestamp': None
-            }
-        ]), 200
+        return jsonify([]), 200
     except Exception as e:
         print(f"Server error: {e}")
-        return jsonify([
-            {
-                'request_id': 64,
-                'request_id_display': 'RE-0064',
-                'timestamp': None
-            }
-        ]), 200
+        return jsonify([]), 200
 
 @app.route('/api/reset-password', methods=['POST', 'OPTIONS'])
 def direct_reset_password():
@@ -1819,6 +1827,12 @@ def skip_request():
         if not request_id:
             return jsonify({'message': 'Request ID is required'}), 400
             
+        # Ensure request_id is converted to integer
+        try:
+            request_id = int(request_id)
+        except (ValueError, TypeError):
+            return jsonify({'message': 'Request ID must be a numeric value'}), 400
+            
         db = get_db()
         cursor = db.cursor()
         
@@ -1831,12 +1845,12 @@ def skip_request():
             
         admin_id = request.headers.get('Authorization')
         
+        # Get current timestamp
+        current_timestamp = datetime.now()
+        
         # Check if there's an existing call_log entry
         cursor.execute("SELECT id FROM call_log WHERE request_id = %s", (request_id,))
         call_log = cursor.fetchone()
-        
-        # Get current timestamp
-        current_timestamp = datetime.now()
         
         if call_log:
             # Update the timestamp of the existing call_log entry
