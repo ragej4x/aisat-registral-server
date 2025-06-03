@@ -1,14 +1,18 @@
+import os
 from flask import Flask, request, jsonify, send_from_directory, render_template, send_file
 from flask_cors import CORS
 import mysql.connector
 from mail_handler import Generatecode
-from datetime import datetime
+from datetime import datetime, timedelta
+from werkzeug.utils import secure_filename
 import json
-import os
+import uuid
 import time
-from mysql.connector import Error
+import math
+import random
 from routes.auth import auth
 import requests
+from mysql.connector import Error
 
 app = Flask(__name__, static_url_path='/static', static_folder='static')
 CORS(app, resources={r"/*": {"origins": "*", "allow_headers": "*", "expose_headers": "*", "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]}})
@@ -25,14 +29,35 @@ def after_request(response):
     return response
 
 def get_db():
-    connection = mysql.connector.connect(
-        host='jimboyaczon.mysql.pythonanywhere-services.com',
-        user='jimboyaczon', 
-        password='fk9lratv',
-        database='jimboyaczon$aisat-registral-db',
-        autocommit=True
-    )
-    return connection
+    try:
+        connection = mysql.connector.connect(
+            host='jimboyaczon.mysql.pythonanywhere-services.com',
+            user='jimboyaczon', 
+            password='fk9lratv',
+            database='jimboyaczon$aisat-registral-db',
+            autocommit=True,
+            connect_timeout=10,
+            use_pure=True
+        )
+        return connection
+    except mysql.connector.Error as err:
+        print(f"Database connection error: {err}")
+        # Try again after a delay
+        time.sleep(1)
+        try:
+            connection = mysql.connector.connect(
+                host='jimboyaczon.mysql.pythonanywhere-services.com',
+                user='jimboyaczon', 
+                password='fk9lratv',
+                database='jimboyaczon$aisat-registral-db',
+                autocommit=True,
+                connect_timeout=15,
+                use_pure=True
+            )
+            return connection
+        except mysql.connector.Error as retry_err:
+            print(f"Failed to connect to database after retry: {retry_err}")
+            raise
 
 db = get_db()
 cursor = db.cursor()
@@ -1143,56 +1168,70 @@ def call_request():
         except (ValueError, TypeError):
             return jsonify({'message': 'Request ID must be a numeric value'}), 400
             
-        db = get_db()
-        cursor = db.cursor()
-        cursor.execute("SELECT * FROM users WHERE id = %s", (request_id,))
-        user = cursor.fetchone()
-        
-        if not user:
-            return jsonify({'message': 'Request not found'}), 404
+        try:
+            db = get_db()
+            cursor = db.cursor()
             
-        admin_id = request.headers.get('Authorization')
-        
-        # Check if there's an existing call_log entry
-        cursor.execute("SELECT id FROM call_log WHERE request_id = %s", (request_id,))
-        existing_call = cursor.fetchone()
-        
-        # When a request is first called, it should have null timestamp
-        # The timestamp will only be set when the admin clicks "SKIP"
-        if existing_call:
-            # Update existing call to have NULL timestamp
-            cursor.execute(
-                "UPDATE call_log SET timestamp = NULL WHERE request_id = %s",
-                (request_id,)
-            )
-            db.commit()
-            print(f"Call updated: Admin {admin_id} called request {request_id} (reset timer)")
-        else:
-            # Insert new call with NULL timestamp
-            cursor.execute(
-                "INSERT INTO call_log (admin_id, request_id, window_number, timestamp) VALUES (%s, %s, %s, NULL)",
-                (admin_id, request_id, "NONE")
-            )
-            db.commit()
-            print(f"Call logged: Admin {admin_id} called request {request_id} (no timer started)")
-        
-        cursor.execute("SELECT request_id FROM users WHERE id = %s", (request_id,))
-        request_id_value = cursor.fetchone()[0]
-        if not request_id_value:
-            request_id_value = f"RE-{str(request_id).zfill(4)}"
+            # Verify the user exists
+            cursor.execute("SELECT * FROM users WHERE id = %s", (request_id,))
+            user = cursor.fetchone()
             
-        return jsonify({
-            'message': 'Request called successfully',
-            'request_id': request_id,
-            'request_id_display': request_id_value
-        })
-        
-    except mysql.connector.Error as err:
-        print(f"Database error: {err}")
-        return jsonify({'message': 'Database error'}), 500
+            if not user:
+                return jsonify({
+                    'message': f'Request not found with ID: {request_id}. Please verify the database ID is correct.'
+                }), 404
+                
+            admin_id = request.headers.get('Authorization')
+            
+            # Check if there's an existing call_log entry
+            cursor.execute("SELECT id FROM call_log WHERE request_id = %s", (request_id,))
+            existing_call = cursor.fetchone()
+            
+            # When a request is first called, it should have null timestamp
+            # The timestamp will only be set when the admin clicks "SKIP"
+            if existing_call:
+                # Update existing call to have NULL timestamp
+                cursor.execute(
+                    "UPDATE call_log SET timestamp = NULL WHERE request_id = %s",
+                    (request_id,)
+                )
+                db.commit()
+                print(f"Call updated: Admin {admin_id} called request {request_id} (reset timer)")
+            else:
+                # Insert new call with NULL timestamp
+                cursor.execute(
+                    "INSERT INTO call_log (admin_id, request_id, window_number, timestamp) VALUES (%s, %s, %s, NULL)",
+                    (admin_id, request_id, "NONE")
+                )
+                db.commit()
+                print(f"Call logged: Admin {admin_id} called request {request_id} (no timer started)")
+            
+            cursor.execute("SELECT request_id FROM users WHERE id = %s", (request_id,))
+            result = cursor.fetchone()
+            request_id_value = result[0] if result and result[0] else f"RE-{str(request_id).zfill(4)}"
+            
+            cursor.close()
+            db.close()
+                
+            return jsonify({
+                'message': 'Request called successfully',
+                'request_id': request_id,
+                'request_id_display': request_id_value
+            })
+            
+        except mysql.connector.Error as db_err:
+            print(f"Database error in call_request: {db_err}")
+            return jsonify({
+                'message': f'Database error: {str(db_err)}. Please check if your database connection is stable.'
+            }), 500
+            
     except Exception as e:
-        print(f"Server error: {e}")
-        return jsonify({'message': f'Server error: {str(e)}'}), 500
+        import traceback
+        traceback.print_exc()
+        print(f"Server error in call_request: {e}")
+        return jsonify({
+            'message': f'Server error: {str(e)}. Please check server logs for details.'
+        }), 500
 
 @app.route('/api/display/current-call', methods=['GET'])
 def get_current_call():
@@ -1833,60 +1872,72 @@ def skip_request():
         except (ValueError, TypeError):
             return jsonify({'message': 'Request ID must be a numeric value'}), 400
             
-        db = get_db()
-        cursor = db.cursor()
-        
-        # Verify the request exists
-        cursor.execute("SELECT * FROM users WHERE id = %s", (request_id,))
-        user = cursor.fetchone()
-        
-        if not user:
-            return jsonify({'message': 'Request not found'}), 404
+        try:
+            db = get_db()
+            cursor = db.cursor()
             
-        admin_id = request.headers.get('Authorization')
-        
-        # Get current timestamp
-        current_timestamp = datetime.now()
-        
-        # Check if there's an existing call_log entry
-        cursor.execute("SELECT id FROM call_log WHERE request_id = %s", (request_id,))
-        call_log = cursor.fetchone()
-        
-        if call_log:
-            # Update the timestamp of the existing call_log entry
-            cursor.execute(
-                "UPDATE call_log SET timestamp = %s WHERE request_id = %s",
-                (current_timestamp, request_id)
-            )
-            db.commit()
-            print(f"Skip request: Admin {admin_id} started timer for request {request_id}")
-        else:
-            # Create a new call_log entry with the timestamp
-            cursor.execute(
-                "INSERT INTO call_log (admin_id, request_id, window_number, timestamp) VALUES (%s, %s, %s, %s)",
-                (admin_id, request_id, "NONE", current_timestamp)
-            )
-            db.commit()
-            print(f"Skip request: Admin {admin_id} called and started timer for request {request_id}")
-        
-        cursor.execute("SELECT request_id FROM users WHERE id = %s", (request_id,))
-        request_id_value = cursor.fetchone()[0]
-        if not request_id_value:
-            request_id_value = f"RE-{str(request_id).zfill(4)}"
+            # Verify the request exists
+            cursor.execute("SELECT * FROM users WHERE id = %s", (request_id,))
+            user = cursor.fetchone()
             
-        return jsonify({
-            'message': 'Request timer started successfully',
-            'request_id': request_id,
-            'request_id_display': request_id_value,
-            'timestamp': current_timestamp.isoformat()
-        })
-        
-    except mysql.connector.Error as err:
-        print(f"Database error in skip request: {err}")
-        return jsonify({'message': 'Database error'}), 500
+            if not user:
+                return jsonify({
+                    'message': f'Request not found with ID: {request_id}. Please verify the database ID is correct.'
+                }), 404
+                
+            admin_id = request.headers.get('Authorization')
+            
+            # Get current timestamp
+            current_timestamp = datetime.now()
+            
+            # Check if there's an existing call_log entry
+            cursor.execute("SELECT id FROM call_log WHERE request_id = %s", (request_id,))
+            call_log = cursor.fetchone()
+            
+            if call_log:
+                # Update the timestamp of the existing call_log entry
+                cursor.execute(
+                    "UPDATE call_log SET timestamp = %s WHERE request_id = %s",
+                    (current_timestamp, request_id)
+                )
+                db.commit()
+                print(f"Skip request: Admin {admin_id} started timer for request {request_id}")
+            else:
+                # Create a new call_log entry with the timestamp
+                cursor.execute(
+                    "INSERT INTO call_log (admin_id, request_id, window_number, timestamp) VALUES (%s, %s, %s, %s)",
+                    (admin_id, request_id, "NONE", current_timestamp)
+                )
+                db.commit()
+                print(f"Skip request: Admin {admin_id} called and started timer for request {request_id}")
+            
+            cursor.execute("SELECT request_id FROM users WHERE id = %s", (request_id,))
+            result = cursor.fetchone()
+            request_id_value = result[0] if result and result[0] else f"RE-{str(request_id).zfill(4)}"
+            
+            cursor.close()
+            db.close()
+                
+            return jsonify({
+                'message': 'Request timer started successfully',
+                'request_id': request_id,
+                'request_id_display': request_id_value,
+                'timestamp': current_timestamp.isoformat()
+            })
+            
+        except mysql.connector.Error as db_err:
+            print(f"Database error in skip_request: {db_err}")
+            return jsonify({
+                'message': f'Database error: {str(db_err)}. Please check if your database connection is stable.'
+            }), 500
+            
     except Exception as e:
-        print(f"Server error in skip request: {e}")
-        return jsonify({'message': f'Server error: {str(e)}'}), 500
+        import traceback
+        traceback.print_exc()
+        print(f"Server error in skip_request: {e}")
+        return jsonify({
+            'message': f'Server error: {str(e)}. Please check server logs for details.'
+        }), 500
 
 if __name__ == '__main__':
     app.run(
