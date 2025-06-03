@@ -1676,6 +1676,130 @@ def get_priority_users():
         print(f"Server error: {e}")
         return jsonify({'message': f'Server error: {str(e)}'}), 500
 
+@app.route('/api/admin/toggle-priority-by-idno', methods=['PUT'])
+def toggle_user_priority_by_idno():
+    try:
+        # Verify admin authorization
+        admin_id = request.headers.get('Authorization')
+        if not admin_id:
+            return jsonify({'message': 'Admin authorization required'}), 401
+
+        update_admin_session(admin_id)
+        
+        # Get parameters from request
+        data = request.json
+        idno = data.get('idno')
+        priority_status = data.get('status', True)  # Default to granting priority if not specified
+        
+        if not idno:
+            return jsonify({'message': 'Student ID Number (idno) is required'}), 400
+            
+        # Connect to database
+        db = get_db()
+        cursor = db.cursor()
+        
+        # Find user by ID number
+        cursor.execute("SELECT id, name, idno, flags FROM users WHERE idno = %s", (idno,))
+        user = cursor.fetchone()
+        
+        if not user:
+            return jsonify({'message': f'User with ID number {idno} not found'}), 404
+            
+        user_id = user[0]  # Get the database ID from the result
+        user_name = user[1]
+        user_idno = user[2]
+        current_flags = user[3].split(',') if user[3] else []
+        
+        # Add or remove priority_user flag
+        if priority_status and 'priority_user' not in current_flags:
+            current_flags.append('priority_user')
+        elif not priority_status and 'priority_user' in current_flags:
+            current_flags.remove('priority_user')
+        
+        # Update flags in database
+        new_flags = ','.join(current_flags) if current_flags else None
+        
+        try:
+            cursor.execute("UPDATE users SET flags = %s WHERE id = %s", (new_flags, user_id))
+            db.commit()
+            
+            action = "granted" if priority_status else "removed"
+            print(f"Admin {admin_id} {action} priority access for user {user_id} (ID number: {idno})")
+            
+            return jsonify({
+                'message': f'Priority access {action} successfully for {user_name}',
+                'user_id': user_id,
+                'idno': user_idno,
+                'flags': current_flags
+            })
+        except mysql.connector.Error as update_err:
+            print(f"Error updating user flags: {update_err}")
+            db.rollback()
+            return jsonify({'message': f'Database error: {str(update_err)}'}), 500
+                
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({'message': f'Database error: {str(err)}'}), 500
+    except Exception as e:
+        print(f"Server error: {e}")
+        return jsonify({'message': f'Server error: {str(e)}'}), 500
+
+@app.route('/api/users/search', methods=['GET'])
+def search_users():
+    try:
+        # Verify admin authorization
+        admin_id = request.headers.get('Authorization')
+        if not admin_id:
+            return jsonify({'message': 'Admin authorization required'}), 401
+
+        update_admin_session(admin_id)
+        
+        # Get search term
+        name_search = request.args.get('name', '')
+        if not name_search:
+            return jsonify({'message': 'Search term is required'}), 400
+            
+        # Connect to database
+        db = get_db()
+        cursor = db.cursor()
+        
+        # Search users by name (case insensitive)
+        search_term = f"%{name_search}%"
+        cursor.execute("""
+            SELECT id, name, idno, email, level, flags
+            FROM users 
+            WHERE name LIKE %s
+            ORDER BY name ASC
+            LIMIT 20
+        """, (search_term,))
+        
+        rows = cursor.fetchall()
+        column_names = [desc[0] for desc in cursor.description]
+        
+        users = []
+        for row in rows:
+            user_dict = dict(zip(column_names, row))
+            
+            # Convert flags from comma-separated string to array if not None
+            if user_dict.get('flags'):
+                user_dict['flags'] = user_dict['flags'].split(',')
+            else:
+                user_dict['flags'] = []
+                
+            users.append(user_dict)
+        
+        cursor.close()
+        db.close()
+        
+        return jsonify(users), 200
+        
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({'message': f'Database error: {str(err)}'}), 500
+    except Exception as e:
+        print(f"Server error: {e}")
+        return jsonify({'message': f'Server error: {str(e)}'}), 500
+
 if __name__ == '__main__':
     app.run(
         host="0.0.0.0",
