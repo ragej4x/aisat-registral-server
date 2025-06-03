@@ -26,10 +26,10 @@ def after_request(response):
 
 def get_db():
     connection = mysql.connector.connect(
-        host='sql12.freesqldatabase.com',
-        user='sql12781768', 
-        password='Yi91dZJIfq',
-        database='sql12781768',
+        host='jimboyaczon.mysql.pythonanywhere-services.com',
+        user='jimboyaczon', 
+        password='fk9lratv',
+        database='jimboyaczon$aisat-registral-db',
         autocommit=True
     )
     return connection
@@ -1620,6 +1620,55 @@ def toggle_user_priority():
                 db.rollback()
                 return jsonify({'message': f'Database error: {str(update_err)}'}), 500
                 
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({'message': f'Database error: {str(err)}'}), 500
+    except Exception as e:
+        print(f"Server error: {e}")
+        return jsonify({'message': f'Server error: {str(e)}'}), 500
+
+@app.route('/api/users/priority', methods=['GET'])
+def get_priority_users():
+    try:
+        # Verify admin authorization
+        admin_id = request.headers.get('Authorization')
+        if not admin_id:
+            return jsonify({'message': 'Admin authorization required'}), 401
+
+        update_admin_session(admin_id)
+        
+        # Connect to database
+        db = get_db()
+        cursor = db.cursor()
+        
+        # Get users with priority_user flag
+        cursor.execute("""
+            SELECT id, name, idno, email, cell, flags
+            FROM users 
+            WHERE flags LIKE '%priority_user%'
+            ORDER BY name ASC
+        """)
+        
+        rows = cursor.fetchall()
+        column_names = [desc[0] for desc in cursor.description]
+        
+        priority_users = []
+        for row in rows:
+            user_dict = dict(zip(column_names, row))
+            
+            # Convert flags from comma-separated string to array
+            if user_dict.get('flags'):
+                user_dict['flags'] = user_dict['flags'].split(',')
+            else:
+                user_dict['flags'] = []
+                
+            priority_users.append(user_dict)
+        
+        cursor.close()
+        db.close()
+        
+        return jsonify(priority_users), 200
+        
     except mysql.connector.Error as err:
         print(f"Database error: {err}")
         return jsonify({'message': f'Database error: {str(err)}'}), 500
