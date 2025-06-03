@@ -14,7 +14,7 @@ app = Flask(__name__, static_url_path='/static', static_folder='static')
 CORS(app, resources={r"/*": {"origins": "*", "allow_headers": "*", "expose_headers": "*", "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]}})
 app.register_blueprint(auth)
 
-@app.before_first_request
+# Instead of @app.before_first_request, create a function to set up tables
 def setup_tables():
     try:
         db = get_db()
@@ -35,6 +35,10 @@ def setup_tables():
         cursor.close()
     except Exception as e:
         print(f"Error setting up tables: {e}")
+
+# Run setup_tables with app context
+with app.app_context():
+    setup_tables()
 
 @app.after_request
 def after_request(response):
@@ -1885,4 +1889,3 @@ if __name__ == '__main__':
         threaded=True,
         use_reloader=False
     )
-
