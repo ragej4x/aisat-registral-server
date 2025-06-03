@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify, send_from_directory, render_template,
 from flask_cors import CORS
 import mysql.connector
 from mail_handler import Generatecode
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import os
 import time
@@ -1354,70 +1354,84 @@ def get_current_calls():
         db = get_db()
         cursor = db.cursor()
         
-        # Modified query to include timer information
-        cursor.execute("""
-            SELECT c.request_id, c.timestamp, u.request_id as display_id,
-                   t.timestamp as timer_timestamp, CASE WHEN t.timestamp IS NOT NULL THEN 1 ELSE 0 END as timer_active,
-                   u.idno
-            FROM call_log c
-            LEFT JOIN users u ON c.request_id = u.id
-            LEFT JOIN (
-                SELECT request_id, MAX(timestamp) as timestamp 
-                FROM request_timers 
-                GROUP BY request_id
-            ) t ON c.request_id = t.request_id
-            ORDER BY c.timestamp DESC
-            LIMIT 10
-        """)
+        # Check if request_timers table exists
+        try:
+            cursor.execute("SHOW TABLES LIKE 'request_timers'")
+            table_exists = cursor.fetchone() is not None
+        except mysql.connector.Error:
+            table_exists = False
+            
+        if table_exists:
+            # Use the full query with timer information
+            try:
+                cursor.execute("""
+                    SELECT c.request_id, c.timestamp, u.request_id as display_id,
+                           t.timestamp as timer_timestamp, CASE WHEN t.timestamp IS NOT NULL THEN 1 ELSE 0 END as timer_active,
+                           u.idno
+                    FROM call_log c
+                    LEFT JOIN users u ON c.request_id = u.id
+                    LEFT JOIN (
+                        SELECT request_id, MAX(timestamp) as timestamp 
+                        FROM request_timers 
+                        GROUP BY request_id
+                    ) t ON c.request_id = t.request_id
+                    ORDER BY c.timestamp DESC
+                """)
+                
+                results = cursor.fetchall()
+                print(f"Found {len(results)} current calls with timer data")
+            except mysql.connector.Error as err:
+                print(f"Error querying current calls with timer info: {err}")
+                # Fall back to basic query without timer information
+                cursor.execute("""
+                    SELECT c.request_id, c.timestamp, u.request_id as display_id, NULL, 0, u.idno
+                    FROM call_log c
+                    LEFT JOIN users u ON c.request_id = u.id
+                    ORDER BY c.timestamp DESC
+                """)
+                results = cursor.fetchall()
+                print(f"Used fallback query and found {len(results)} current calls")
+        else:
+            # Use query without timer information if table doesn't exist
+            cursor.execute("""
+                SELECT c.request_id, c.timestamp, u.request_id as display_id, NULL, 0, u.idno
+                FROM call_log c
+                LEFT JOIN users u ON c.request_id = u.id
+                ORDER BY c.timestamp DESC
+            """)
+            results = cursor.fetchall()
+            print(f"Table 'request_timers' not found. Found {len(results)} current calls without timer data")
         
-        result = []
-        calls = cursor.fetchall()
+        calls = []
+        for row in results:
+            call = {
+                'request_id': row[0],
+                'timestamp': row[1].isoformat() if row[1] else None,
+                'request_id_display': row[2],
+                'timer_timestamp': row[3].isoformat() if row[3] else None,
+                'timer_active': bool(row[4]),
+                'idno': row[5]
+            }
+            
+            # Add expiration time for convenience
+            if call['timer_timestamp']:
+                timer_dt = datetime.fromisoformat(call['timer_timestamp'])
+                call['expiration_time'] = (timer_dt + timedelta(minutes=10)).isoformat()
+                print(f"Call {call['request_id']} has timer starting at {call['timer_timestamp']}, expiring at {call['expiration_time']}")
+                
+            calls.append(call)
+            
+        print(f"Returning {len(calls)} current calls")
         
-        for call in calls:
-            request_id = call[0]
-            timestamp = call[1]
-            display_id = call[2]
-            timer_timestamp = call[3]
-            timer_active = call[4]
-            idno = call[5]
-            
-            if not display_id:
-                display_id = f"RE-{str(request_id).zfill(4)}"
-            
-            if not any(r['request_id'] == request_id for r in result):
-                result.append({
-                    'request_id': request_id,
-                    'request_id_display': display_id,
-                    'timestamp': timestamp.isoformat() if timestamp else None,
-                    'timer_timestamp': timer_timestamp.isoformat() if timer_timestamp else None,
-                    'timer_active': bool(timer_active),
-                    'idno': idno
-                })
-            
-        return jsonify(result), 200
-            
+        return jsonify(calls)
     except mysql.connector.Error as err:
-        print(f"Database error: {err}")
-        return jsonify([
-            {
-                'request_id': 64,
-                'request_id_display': 'RE-0064',
-                'timestamp': datetime.now().isoformat(),
-                'timer_active': False,
-                'timer_timestamp': None
-            }
-        ]), 200
+        print(f"Database error in get_current_calls: {err}")
+        return jsonify({'error': str(err)}), 500
     except Exception as e:
-        print(f"Server error: {e}")
-        return jsonify([
-            {
-                'request_id': 64,
-                'request_id_display': 'RE-0064',
-                'timestamp': datetime.now().isoformat(),
-                'timer_active': False,
-                'timer_timestamp': None
-            }
-        ]), 200
+        print(f"Error in get_current_calls: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/api/reset-password', methods=['POST', 'OPTIONS'])
 def direct_reset_password():
@@ -1858,21 +1872,58 @@ def skip_request():
         db = get_db()
         cursor = db.cursor()
         
+        # First check if request_timers table exists, create if not
+        try:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS request_timers (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    request_id INT NOT NULL,
+                    timestamp DATETIME NOT NULL,
+                    admin_id VARCHAR(255),
+                    FOREIGN KEY (request_id) REFERENCES users(id)
+                )
+            """)
+            db.commit()
+        except mysql.connector.Error as table_err:
+            print(f"Error creating request_timers table: {table_err}")
+            # Try again without foreign key if that was the issue
+            if "foreign key" in str(table_err).lower():
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS request_timers (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        request_id INT NOT NULL,
+                        timestamp DATETIME NOT NULL,
+                        admin_id VARCHAR(255)
+                    )
+                """)
+                db.commit()
+        
         # Check if the request exists
         cursor.execute("SELECT id FROM users WHERE id = %s", (request_id,))
         user = cursor.fetchone()
         if not user:
             return jsonify({'message': 'Request not found'}), 404
         
+        # Get current server timestamp which will be stored and used by clients
+        current_time = datetime.now()
+        formatted_time = current_time.strftime('%Y-%m-%d %H:%M:%S')
+        print(f"Starting timer for request {request_id} at {formatted_time}")
+        
         # Add a timer for the request
         cursor.execute(
             "INSERT INTO request_timers (request_id, timestamp, admin_id) VALUES (%s, %s, %s)",
-            (request_id, datetime.now(), admin_id)
+            (request_id, current_time, admin_id)
         )
         
         db.commit()
         
-        return jsonify({'message': 'Timer started successfully'}), 200
+        # Return the timestamp so it can be used by the client if needed
+        return jsonify({
+            'message': 'Timer started successfully',
+            'request_id': request_id,
+            'timestamp': current_time.isoformat(),
+            'expiration_time': (current_time + timedelta(minutes=10)).isoformat()
+        }), 200
         
     except mysql.connector.Error as err:
         print(f"Database error: {err}")
