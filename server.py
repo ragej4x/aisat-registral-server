@@ -1146,14 +1146,16 @@ def call_request():
             return jsonify({'message': 'Request not found'}), 404
             
         admin_id = request.headers.get('Authorization')
-                        
+        
+        # When a request is first called, it should have no timestamp
+        # The timestamp will only be set when the admin clicks "SKIP"
         try:
             cursor.execute(
-                "INSERT INTO call_log (admin_id, request_id, window_number) VALUES (%s, %s, %s)",
+                "INSERT INTO call_log (admin_id, request_id, window_number, timestamp) VALUES (%s, %s, %s, NULL)",
                 (admin_id, request_id, "NONE")
             )
             db.commit()
-            print(f"Call logged: Admin {admin_id} called request {request_id}")
+            print(f"Call logged: Admin {admin_id} called request {request_id} (no timer started)")
         except mysql.connector.Error as log_err:
             print(f"Error logging call: {log_err}")
         
@@ -1328,7 +1330,7 @@ def get_current_calls():
         db = get_db()
         cursor = db.cursor()
         cursor.execute("""
-            SELECT c.request_id, c.timestamp, u.request_id as display_id
+            SELECT c.request_id, c.timestamp, u.request_id as display_id, u.idno, u.name
             FROM call_log c
             LEFT JOIN users u ON c.request_id = u.id
             ORDER BY c.timestamp DESC
@@ -1342,6 +1344,12 @@ def get_current_calls():
             request_id = call[0]
             timestamp = call[1]
             display_id = call[2]
+            idno = call[3]
+            name = call[4]
+            
+            # Ensure timestamp is explicitly set to null when not present
+            # This makes it clear to the client that there's no timer
+            timestamp_value = timestamp.isoformat() if timestamp else None
             
             if not display_id:
                 display_id = f"RE-{str(request_id).zfill(4)}"
@@ -1350,7 +1358,9 @@ def get_current_calls():
                 result.append({
                     'request_id': request_id,
                     'request_id_display': display_id,
-                    'timestamp': timestamp.isoformat() if timestamp else None
+                    'timestamp': timestamp_value,
+                    'idno': idno,
+                    'name': name
                 })
             
         return jsonify(result), 200
@@ -1361,7 +1371,7 @@ def get_current_calls():
             {
                 'request_id': 64,
                 'request_id_display': 'RE-0064',
-                'timestamp': datetime.now().isoformat()
+                'timestamp': None
             }
         ]), 200
     except Exception as e:
@@ -1370,7 +1380,7 @@ def get_current_calls():
             {
                 'request_id': 64,
                 'request_id_display': 'RE-0064',
-                'timestamp': datetime.now().isoformat()
+                'timestamp': None
             }
         ]), 200
 
@@ -1798,6 +1808,70 @@ def search_users():
         return jsonify({'message': f'Database error: {str(err)}'}), 500
     except Exception as e:
         print(f"Server error: {e}")
+        return jsonify({'message': f'Server error: {str(e)}'}), 500
+
+@app.route('/api/display/skip', methods=['POST'])
+def skip_request():
+    try:
+        data = request.json
+        request_id = data.get('request_id')
+        
+        if not request_id:
+            return jsonify({'message': 'Request ID is required'}), 400
+            
+        db = get_db()
+        cursor = db.cursor()
+        
+        # Verify the request exists
+        cursor.execute("SELECT * FROM users WHERE id = %s", (request_id,))
+        user = cursor.fetchone()
+        
+        if not user:
+            return jsonify({'message': 'Request not found'}), 404
+            
+        admin_id = request.headers.get('Authorization')
+        
+        # Check if there's an existing call_log entry
+        cursor.execute("SELECT id FROM call_log WHERE request_id = %s", (request_id,))
+        call_log = cursor.fetchone()
+        
+        # Get current timestamp
+        current_timestamp = datetime.now()
+        
+        if call_log:
+            # Update the timestamp of the existing call_log entry
+            cursor.execute(
+                "UPDATE call_log SET timestamp = %s WHERE request_id = %s",
+                (current_timestamp, request_id)
+            )
+            db.commit()
+            print(f"Skip request: Admin {admin_id} started timer for request {request_id}")
+        else:
+            # Create a new call_log entry with the timestamp
+            cursor.execute(
+                "INSERT INTO call_log (admin_id, request_id, window_number, timestamp) VALUES (%s, %s, %s, %s)",
+                (admin_id, request_id, "NONE", current_timestamp)
+            )
+            db.commit()
+            print(f"Skip request: Admin {admin_id} called and started timer for request {request_id}")
+        
+        cursor.execute("SELECT request_id FROM users WHERE id = %s", (request_id,))
+        request_id_value = cursor.fetchone()[0]
+        if not request_id_value:
+            request_id_value = f"RE-{str(request_id).zfill(4)}"
+            
+        return jsonify({
+            'message': 'Request timer started successfully',
+            'request_id': request_id,
+            'request_id_display': request_id_value,
+            'timestamp': current_timestamp.isoformat()
+        })
+        
+    except mysql.connector.Error as err:
+        print(f"Database error in skip request: {err}")
+        return jsonify({'message': 'Database error'}), 500
+    except Exception as e:
+        print(f"Server error in skip request: {e}")
         return jsonify({'message': f'Server error: {str(e)}'}), 500
 
 if __name__ == '__main__':
