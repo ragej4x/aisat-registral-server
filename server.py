@@ -14,6 +14,28 @@ app = Flask(__name__, static_url_path='/static', static_folder='static')
 CORS(app, resources={r"/*": {"origins": "*", "allow_headers": "*", "expose_headers": "*", "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]}})
 app.register_blueprint(auth)
 
+@app.before_first_request
+def setup_tables():
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        
+        # Create request_timers table if it doesn't exist
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS request_timers (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                request_id INT NOT NULL,
+                timestamp DATETIME NOT NULL,
+                admin_id VARCHAR(255),
+                FOREIGN KEY (request_id) REFERENCES users(id)
+            )
+        """)
+        
+        db.commit()
+        cursor.close()
+    except Exception as e:
+        print(f"Error setting up tables: {e}")
+
 @app.after_request
 def after_request(response):
     if 'Access-Control-Allow-Origin' not in response.headers:
@@ -1327,10 +1349,19 @@ def get_current_calls():
     try:
         db = get_db()
         cursor = db.cursor()
+        
+        # Modified query to include timer information
         cursor.execute("""
-            SELECT c.request_id, c.timestamp, u.request_id as display_id
+            SELECT c.request_id, c.timestamp, u.request_id as display_id,
+                   t.timestamp as timer_timestamp, CASE WHEN t.timestamp IS NOT NULL THEN 1 ELSE 0 END as timer_active,
+                   u.idno
             FROM call_log c
             LEFT JOIN users u ON c.request_id = u.id
+            LEFT JOIN (
+                SELECT request_id, MAX(timestamp) as timestamp 
+                FROM request_timers 
+                GROUP BY request_id
+            ) t ON c.request_id = t.request_id
             ORDER BY c.timestamp DESC
             LIMIT 10
         """)
@@ -1342,6 +1373,9 @@ def get_current_calls():
             request_id = call[0]
             timestamp = call[1]
             display_id = call[2]
+            timer_timestamp = call[3]
+            timer_active = call[4]
+            idno = call[5]
             
             if not display_id:
                 display_id = f"RE-{str(request_id).zfill(4)}"
@@ -1350,7 +1384,10 @@ def get_current_calls():
                 result.append({
                     'request_id': request_id,
                     'request_id_display': display_id,
-                    'timestamp': timestamp.isoformat() if timestamp else None
+                    'timestamp': timestamp.isoformat() if timestamp else None,
+                    'timer_timestamp': timer_timestamp.isoformat() if timer_timestamp else None,
+                    'timer_active': bool(timer_active),
+                    'idno': idno
                 })
             
         return jsonify(result), 200
@@ -1361,7 +1398,9 @@ def get_current_calls():
             {
                 'request_id': 64,
                 'request_id_display': 'RE-0064',
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now().isoformat(),
+                'timer_active': False,
+                'timer_timestamp': None
             }
         ]), 200
     except Exception as e:
@@ -1370,7 +1409,9 @@ def get_current_calls():
             {
                 'request_id': 64,
                 'request_id_display': 'RE-0064',
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now().isoformat(),
+                'timer_active': False,
+                'timer_timestamp': None
             }
         ]), 200
 
@@ -1792,6 +1833,42 @@ def search_users():
         db.close()
         
         return jsonify(users), 200
+        
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({'message': f'Database error: {str(err)}'}), 500
+    except Exception as e:
+        print(f"Server error: {e}")
+        return jsonify({'message': f'Server error: {str(e)}'}), 500
+
+@app.route('/api/display/skip', methods=['POST'])
+def skip_request():
+    try:
+        data = request.json
+        request_id = data.get('request_id')
+        admin_id = request.headers.get('Authorization')
+        
+        if not request_id:
+            return jsonify({'message': 'Request ID is required'}), 400
+            
+        db = get_db()
+        cursor = db.cursor()
+        
+        # Check if the request exists
+        cursor.execute("SELECT id FROM users WHERE id = %s", (request_id,))
+        user = cursor.fetchone()
+        if not user:
+            return jsonify({'message': 'Request not found'}), 404
+        
+        # Add a timer for the request
+        cursor.execute(
+            "INSERT INTO request_timers (request_id, timestamp, admin_id) VALUES (%s, %s, %s)",
+            (request_id, datetime.now(), admin_id)
+        )
+        
+        db.commit()
+        
+        return jsonify({'message': 'Timer started successfully'}), 200
         
     except mysql.connector.Error as err:
         print(f"Database error: {err}")
