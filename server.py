@@ -26,10 +26,10 @@ def after_request(response):
 
 def get_db():
     connection = mysql.connector.connect(
-        host='jimboyaczon.mysql.pythonanywhere-services.com',
-        user='jimboyaczon', 
-        password='fk9lratv',
-        database='jimboyaczon$aisat-registral-db',
+        host='sql12.freesqldatabase.com',
+        user='sql12781768', 
+        password='Yi91dZJIfq',
+        database='sql12781768',
         autocommit=True
     )
     return connection
@@ -183,6 +183,25 @@ def student_login():
         if user:
             column_names = [desc[0] for desc in cursor.description]
             user_dict = dict(zip(column_names, user))
+            
+            # Check if flags field exists in the database
+            try:
+                cursor.execute("SELECT flags FROM users WHERE id = %s", (user_dict['id'],))
+                flags_result = cursor.fetchone()
+                
+                if flags_result and flags_result[0]:
+                    # If flags exist, add them to user data
+                    user_dict['flags'] = flags_result[0].split(',') if isinstance(flags_result[0], str) else []
+                else:
+                    # Default empty array if no flags
+                    user_dict['flags'] = []
+                    
+                print(f"User {user_dict['id']} flags: {user_dict['flags']}")
+            except mysql.connector.Error as flags_err:
+                # Handle case where flags column might not exist yet
+                print(f"Error getting flags: {flags_err}")
+                user_dict['flags'] = []
+                
             cursor.close()
             db.close()
             
@@ -958,6 +977,25 @@ def get_user(user_id):
         if 'password' in user_dict:
             del user_dict['password']
         
+        # Check if flags field exists in the database and fetch flags
+        try:
+            # Try to get flags from the database
+            cursor.execute("SELECT flags FROM users WHERE id = %s", (user_id,))
+            flags_result = cursor.fetchone()
+            
+            if flags_result and flags_result[0]:
+                # If flags exist, add them to user data
+                user_dict['flags'] = flags_result[0].split(',') if isinstance(flags_result[0], str) else []
+            else:
+                # Default empty array if no flags
+                user_dict['flags'] = []
+                
+            print(f"User {user_id} flags: {user_dict['flags']}")
+        except mysql.connector.Error as flags_err:
+            # Handle case where flags column might not exist yet
+            print(f"Error getting flags: {flags_err}")
+            user_dict['flags'] = []
+        
         return jsonify({
             'message': 'User data retrieved successfully',
             'user': user_dict
@@ -1494,8 +1532,100 @@ def tv_display():
     else:
         return "Pucha bat ayaw", 404
 
+@app.route('/api/admin/toggle-priority', methods=['PUT'])
+def toggle_user_priority():
+    try:
+        # Verify admin authorization
+        admin_id = request.headers.get('Authorization')
+        if not admin_id:
+            return jsonify({'message': 'Admin authorization required'}), 401
 
-
+        update_admin_session(admin_id)
+        
+        # Get user ID from request
+        data = request.json
+        user_id = data.get('user_id')
+        priority_status = data.get('status', True)  # Default to granting priority if not specified
+        
+        if not user_id:
+            return jsonify({'message': 'User ID is required'}), 400
+            
+        # Connect to database
+        db = get_db()
+        cursor = db.cursor()
+        
+        # Check if user exists
+        cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+        user = cursor.fetchone()
+        
+        if not user:
+            return jsonify({'message': 'User not found'}), 404
+            
+        # Get current flags
+        cursor.execute("SELECT flags FROM users WHERE id = %s", (user_id,))
+        flags_result = cursor.fetchone()
+        
+        current_flags = []
+        if flags_result and flags_result[0]:
+            current_flags = flags_result[0].split(',')
+        
+        # Add or remove priority_user flag
+        if priority_status and 'priority_user' not in current_flags:
+            current_flags.append('priority_user')
+        elif not priority_status and 'priority_user' in current_flags:
+            current_flags.remove('priority_user')
+        
+        # Update flags in database
+        new_flags = ','.join(current_flags) if current_flags else None
+        
+        try:
+            cursor.execute("UPDATE users SET flags = %s WHERE id = %s", (new_flags, user_id))
+            db.commit()
+            
+            action = "granted" if priority_status else "removed"
+            print(f"Admin {admin_id} {action} priority access for user {user_id}")
+            
+            return jsonify({
+                'message': f'Priority access {action} successfully',
+                'user_id': user_id,
+                'flags': current_flags
+            })
+        except mysql.connector.Error as update_err:
+            # Check if flags column doesn't exist
+            if "Unknown column 'flags'" in str(update_err):
+                try:
+                    # Add flags column if it doesn't exist
+                    cursor.execute("ALTER TABLE users ADD COLUMN flags VARCHAR(255) DEFAULT NULL")
+                    db.commit()
+                    print("Added flags column to users table")
+                    
+                    # Try update again
+                    cursor.execute("UPDATE users SET flags = %s WHERE id = %s", (new_flags, user_id))
+                    db.commit()
+                    
+                    action = "granted" if priority_status else "removed"
+                    print(f"Admin {admin_id} {action} priority access for user {user_id} (after adding column)")
+                    
+                    return jsonify({
+                        'message': f'Priority access {action} successfully',
+                        'user_id': user_id,
+                        'flags': current_flags
+                    })
+                except mysql.connector.Error as err:
+                    print(f"Error adding flags column: {err}")
+                    db.rollback()
+                    return jsonify({'message': f'Database error: {str(err)}'}), 500
+            else:
+                print(f"Error updating user flags: {update_err}")
+                db.rollback()
+                return jsonify({'message': f'Database error: {str(update_err)}'}), 500
+                
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({'message': f'Database error: {str(err)}'}), 500
+    except Exception as e:
+        print(f"Server error: {e}")
+        return jsonify({'message': f'Server error: {str(e)}'}), 500
 
 if __name__ == '__main__':
     app.run(
