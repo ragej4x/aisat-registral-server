@@ -1932,6 +1932,91 @@ def skip_request():
         print(f"Server error: {e}")
         return jsonify({'message': f'Server error: {str(e)}'}), 500
 
+@app.route('/api/user/cleanup', methods=['POST'])
+def cleanup_user_data():
+    """
+    Clean up previous user data from call_log, request_timers, and sessions tables.
+    This is called when a user requests a new ticket to ensure there's no stale data.
+    """
+    try:
+        data = request.json
+        idno = data.get('idno')
+        
+        if not idno:
+            return jsonify({'message': 'User ID is required'}), 400
+        
+        db = get_db()
+        cursor = db.cursor()
+        
+        # First get user ID from idno
+        cursor.execute("SELECT id FROM users WHERE idno = %s", (idno,))
+        user_result = cursor.fetchone()
+        
+        if not user_result:
+            return jsonify({'message': 'User not found'}), 404
+        
+        user_id = user_result[0]
+        print(f"Cleaning up data for user ID {user_id} (idno: {idno})")
+        
+        # Clean up call_log entries related to this user's requests
+        try:
+            cursor.execute("""
+                DELETE FROM call_log
+                WHERE request_id IN (SELECT id FROM users WHERE idno = %s)
+            """, (idno,))
+            call_logs_deleted = cursor.rowcount
+            print(f"Deleted {call_logs_deleted} call log entries")
+        except mysql.connector.Error as err:
+            print(f"Error cleaning call_log: {err}")
+            call_logs_deleted = 0
+        
+        # Clean up request_timers entries
+        try:
+            cursor.execute("""
+                DELETE FROM request_timers
+                WHERE request_id IN (SELECT id FROM users WHERE idno = %s)
+            """, (idno,))
+            timers_deleted = cursor.rowcount
+            print(f"Deleted {timers_deleted} request timer entries")
+        except mysql.connector.Error as err:
+            print(f"Error cleaning request_timers: {err}")
+            timers_deleted = 0
+            
+        # Reset any pending request status for this user
+        try:
+            cursor.execute("""
+                UPDATE users 
+                SET status = NULL
+                WHERE idno = %s AND status = 'pending'
+            """, (idno,))
+            status_reset = cursor.rowcount
+            print(f"Reset status for {status_reset} pending requests")
+        except mysql.connector.Error as err:
+            print(f"Error resetting status: {err}")
+            status_reset = 0
+        
+        db.commit()
+        cursor.close()
+        db.close()
+        
+        return jsonify({
+            'message': 'User data cleaned successfully',
+            'call_logs_deleted': call_logs_deleted,
+            'timers_deleted': timers_deleted,
+            'status_reset': status_reset
+        }), 200
+        
+    except mysql.connector.Error as err:
+        print(f"Database error in user cleanup: {err}")
+        try:
+            db.rollback()
+        except:
+            pass
+        return jsonify({'message': f'Database error: {str(err)}'}), 500
+    except Exception as e:
+        print(f"Server error in user cleanup: {e}")
+        return jsonify({'message': f'Server error: {str(e)}'}), 500
+
 if __name__ == '__main__':
     app.run(
         host="0.0.0.0",
@@ -1940,4 +2025,3 @@ if __name__ == '__main__':
         threaded=True,
         use_reloader=False
     )
-
