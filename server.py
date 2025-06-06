@@ -1981,20 +1981,20 @@ def cleanup_user_data():
         except mysql.connector.Error as err:
             print(f"Error cleaning request_timers: {err}")
             timers_deleted = 0
-            
-        # Reset any pending request status for this user
+        
+        # Reset ALL request statuses for this user - including pending, approved, and rejected
         try:
             cursor.execute("""
                 UPDATE users 
                 SET status = NULL
-                WHERE idno = %s AND status = 'pending'
+                WHERE idno = %s
             """, (idno,))
             status_reset = cursor.rowcount
-            print(f"Reset status for {status_reset} pending requests")
+            print(f"Reset status for {status_reset} requests (pending, approved, rejected)")
         except mysql.connector.Error as err:
             print(f"Error resetting status: {err}")
             status_reset = 0
-        
+            
         db.commit()
         cursor.close()
         db.close()
