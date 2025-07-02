@@ -1,0 +1,10 @@
+Flask==2.0.1
+Flask-Cors==3.0.10
+Werkzeug==2.3.7
+PyJWT==2.3.0
+mysql-connector-python==8.0.27
+pyjwt==2.6.0
+
+
+
+A smart school queueing app that reduces wait times, streamlines student flow, and keeps daily routines organized and efficient.
