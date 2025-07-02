@@ -32,23 +32,11 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'aisat_registral_secret_key')
 # Dictionary to store verification codes with timestamps
 verification_codes = {}
 
-# --- Static File Serving ---
-# Serve files from the sideload directory (for the desktop app)
-@app.route('/sideload/<path:filename>')
-def serve_sideload(filename):
-    return send_from_directory('sideload', filename)
-
-# Serve files from the mobile directory and its subdirectories (css, js)
-@app.route('/mobile/<path:path>')
-def serve_mobile(path):
-    return send_from_directory('mobile', path)
-# -------------------------
-
 DB_CONFIG = {
-    "host": "localhost",
-    "user": "root",
-    "password": "",
-    "database": "aisat_db"
+    host='jimboyaczon.mysql.pythonanywhere-services.com',
+    user='jimboyaczon', 
+    password='fk9lratv',
+    database='jimboyaczon$aisat-registral-db'
 }
 
 def get_db_connection():
