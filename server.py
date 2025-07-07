@@ -67,6 +67,7 @@ DB_CONFIG = {
     "database": "jimboyaczon$aisat-registral-db"
 }
 
+
 def get_db_connection():
     try:
         return mysql.connector.connect(**DB_CONFIG)
@@ -1276,33 +1277,53 @@ def delete_scheduled_request(user_id):
 
 # Background task to check and auto-reject users with expired counters
 def auto_reject_expired_users():
+    print("Starting auto-reject background thread...")
     while True:
         try:
+            # Find and reject expired users
             conn = get_db_connection()
             if conn:
                 cursor = conn.cursor(dictionary=True)
-                
-                # Find users with status 'oncall' and counter <= 0
-                cursor.execute("SELECT id FROM users WHERE status = 'oncall' AND counter <= 0")
-                expired_users = cursor.fetchall()
-                
-                # Auto-reject each expired user
-                for user in expired_users:
-                    user_id = user['id']
-                    cursor.execute("UPDATE users SET status = 'rejected', counter = NULL WHERE id = %s", (user_id,))
-                
-                conn.commit()
-                cursor.close()
-                conn.close()
+                try:
+                    # Find users with status 'oncall' and counter <= 0
+                    # ONLY include users with non-null counter values to prevent rejecting users without timers
+                    cursor.execute("SELECT id FROM users WHERE status = 'oncall' AND counter IS NOT NULL AND counter <= 0")
+                    expired_users = cursor.fetchall()
+                    
+                    # Auto-reject each expired user
+                    for user in expired_users:
+                        user_id = user['id']
+                        print(f"Auto-rejecting user {user_id} due to expired counter")
+                        cursor.execute("UPDATE users SET status = 'rejected', counter = NULL WHERE id = %s", (user_id,))
+                    
+                    if expired_users:
+                        print(f"Auto-rejected {len(expired_users)} users with expired timers")
+                    
+                    conn.commit()
+                finally:
+                    cursor.close()
+                    conn.close()
             
-            # Decrement counter for all oncall users
+            # Decrement counter in a separate connection
             conn = get_db_connection()
             if conn:
                 cursor = conn.cursor()
-                cursor.execute("UPDATE users SET counter = counter - 1 WHERE status = 'oncall' AND counter > 0")
-                conn.commit()
-                cursor.close()
-                conn.close()
+                try:
+                    # Count how many rows will be affected for logging
+                    cursor.execute("SELECT COUNT(*) FROM users WHERE status = 'oncall' AND counter > 0")
+                    count = cursor.fetchone()[0]
+                    
+                    # Decrement counter for all oncall users
+                    cursor.execute("UPDATE users SET counter = counter - 1 WHERE status = 'oncall' AND counter > 0")
+                    conn.commit()
+                    
+                    if count > 0:
+                        print(f"Decremented counter for {count} oncall users")
+                except Exception as e:
+                    print(f"Error decrementing counters: {e}")
+                finally:
+                    cursor.close()
+                    conn.close()
                 
         except Exception as e:
             print(f"Error in auto-reject background task: {e}")
@@ -1312,6 +1333,19 @@ def auto_reject_expired_users():
 
 # Start the background task in a separate thread
 auto_reject_thread = threading.Thread(target=auto_reject_expired_users, daemon=True)
+
+# Start the auto-reject thread when the server starts
+if __name__ == '__main__':
+    # Start the auto-reject background thread
+    auto_reject_thread.start()
+    print("Auto-reject background thread started")
+    
+    # Start the Flask application
+    app.run(host="0.0.0.0", port=5057, debug=False)
+else:
+    # When imported as a module, still start the thread
+    auto_reject_thread.start()
+    print("Auto-reject background thread started in module mode")
 
 @app.route('/api/user_by_id', methods=['GET'])
 @token_required
