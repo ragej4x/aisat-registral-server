@@ -2309,10 +2309,6 @@ def set_admin_active():
         room_name = request.args.get('room')  # No default room name
         is_active = request.args.get('is_active', 'yes')  # Default to active
         
-        # Validate is_active parameter
-        if is_active not in ['yes', 'no']:
-            is_active = 'yes'  # Default to active if invalid value
-        
         conn, cursor = None, None
         try:
             conn = get_db_connection()
@@ -2330,6 +2326,31 @@ def set_admin_active():
                     print("Added is_active column to admins table")
                 except mysql.connector.Error as e:
                     return jsonify({"error": f"Failed to add is_active column: {str(e)}"}), 500
+            
+            # Special case: if is_active is 'check', just return the current status without changing it
+            if is_active == 'check':
+                cursor.execute("SELECT id, full_name, room_name, is_active FROM admins WHERE id = %s", (admin_id,))
+                admin_row = cursor.fetchone()
+                
+                if not admin_row:
+                    return jsonify({"error": f"Admin ID {admin_id} not found"}), 404
+                    
+                admin_info = {
+                    "id": admin_row[0],
+                    "name": admin_row[1],
+                    "room_name": admin_row[2],
+                    "is_active": admin_row[3]
+                }
+                
+                return jsonify({
+                    "success": True,
+                    "message": f"Admin ID {admin_id} status is {admin_info['is_active']}",
+                    "admin": admin_info
+                })
+            
+            # Validate is_active parameter for updates
+            if is_active not in ['yes', 'no']:
+                is_active = 'yes'  # Default to active if invalid value
             
             # Update room_name as well if specified
             if room_name:
@@ -2535,15 +2556,20 @@ def check_admin_active_status():
         if not cursor.fetchone():
             return jsonify({"active_admins": []})
         
-        # Get all active admins
-        cursor.execute("SELECT id, full_name, room_name FROM admins WHERE is_active = 'yes'")
+        # Get all active admins - make sure to check is_active = 'yes'
+        cursor.execute("SELECT id, full_name, room_name, is_active FROM admins WHERE is_active = 'yes'")
         active_admins = []
         for row in cursor.fetchall():
-            active_admins.append({
-                "id": row[0],
-                "name": row[1],
-                "room_name": row[2]
-            })
+            # Double check the is_active status
+            if row[3] == 'yes':
+                active_admins.append({
+                    "id": row[0],
+                    "name": row[1],
+                    "room_name": row[2]
+                })
+        
+        # Log the number of active admins found
+        print(f"Found {len(active_admins)} active admins")
         
         return jsonify({"active_admins": active_admins})
         
