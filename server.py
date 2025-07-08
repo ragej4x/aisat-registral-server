@@ -2097,11 +2097,91 @@ def admin_update_status():
         
     # For actual POST requests
     try:
-        # Just return success for now
-        return jsonify({
-            "success": True,
-            "message": "Status updated successfully"
-        })
+        # Get the token from the request
+        token = None
+        if 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
+            parts = auth_header.split()
+            if len(parts) == 2 and parts[0].lower() == 'bearer':
+                token = parts[1]
+        
+        if not token:
+            return jsonify({"error": "Token is missing"}), 401
+        
+        # Decode the token
+        try:
+            data = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+            admin_id = data.get('id')
+            
+            if not admin_id or not data.get('is_admin'):
+                return jsonify({"error": "Admin privileges required"}), 403
+                
+        except jwt.ExpiredSignatureError:
+            return jsonify({"error": "Token has expired. Please log in again."}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({"error": "Invalid token. Please log in again."}), 401
+        except Exception as e:
+            return jsonify({"error": f"Token validation error: {str(e)}"}), 401
+        
+        # Get is_active status from request body
+        request_data = request.get_json()
+        is_active = request_data.get('is_active', 'yes')
+        
+        # Validate is_active parameter
+        if is_active not in ['yes', 'no']:
+            is_active = 'yes'  # Default to active if invalid value
+        
+        conn, cursor = None, None
+        try:
+            conn = get_db_connection()
+            if not conn:
+                return jsonify({"error": "Database connection failed"}), 500
+            
+            cursor = conn.cursor()
+            
+            # First, make sure the is_active column exists
+            cursor.execute("SHOW COLUMNS FROM admins LIKE 'is_active'")
+            if not cursor.fetchone():
+                try:
+                    cursor.execute("ALTER TABLE admins ADD COLUMN is_active ENUM('yes', 'no') DEFAULT 'no'")
+                    conn.commit()
+                    print("Added is_active column to admins table")
+                except mysql.connector.Error as e:
+                    return jsonify({"error": f"Failed to add is_active column: {str(e)}"}), 500
+            
+            # Update the admin's active status
+            cursor.execute("UPDATE admins SET is_active = %s WHERE id = %s", (is_active, admin_id))
+            conn.commit()
+            
+            # Get the updated admin info
+            cursor.execute("SELECT id, full_name, room_name FROM admins WHERE id = %s", (admin_id,))
+            admin_row = cursor.fetchone()
+            
+            if not admin_row:
+                return jsonify({"error": "Admin not found"}), 404
+                
+            admin_info = {
+                "id": admin_row[0],
+                "name": admin_row[1],
+                "room_name": admin_row[2],
+                "is_active": is_active
+            }
+            
+            return jsonify({
+                "success": True,
+                "message": f"Admin status updated to {is_active}",
+                "admin": admin_info
+            })
+            
+        except Exception as e:
+            print(f"Error updating admin status: {str(e)}")
+            return jsonify({"error": str(e)}), 500
+        finally:
+            if cursor:
+                cursor.close()
+            if conn and conn.is_connected():
+                conn.close()
+                
     except Exception as e:
         print(f"Error in admin_update_status: {str(e)}")
         return jsonify({"error": str(e)}), 500
