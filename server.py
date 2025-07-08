@@ -13,6 +13,7 @@ import random
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import json
 
 # Import email configuration
 
@@ -42,6 +43,9 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'aisat_registral_secret_key')
 
 # Dictionary to store verification codes with timestamps
 verification_codes = {}
+
+# Dictionary to store TV display data
+tv_display_data = {}
 
 # --- Static File Serving ---
 # Serve files from the sideload directory (for the desktop app)
@@ -3065,6 +3069,51 @@ def get_transaction_history_stats():
             cursor.close()
         if conn and conn.is_connected():
             conn.close()
+
+# Endpoint for TV display data
+@app.route('/api/tv_display_data', methods=['POST', 'GET'])
+def handle_tv_display_data():
+    global tv_display_data
+    
+    if request.method == 'GET':
+        # Return the stored TV display data
+        return jsonify(tv_display_data)
+    
+    elif request.method == 'POST':
+        try:
+            # Get data from request
+            data = request.get_json()
+            if not data:
+                return jsonify({"error": "No data provided"}), 400
+            
+            # Update the global TV display data
+            display_id = data.get('displayId', 'default')
+            tv_display_data[display_id] = {
+                'timestamp': data.get('timestamp', datetime.now().isoformat()),
+                'adminWindows': data.get('adminWindows', {})
+            }
+            
+            # Write data to a JSON file for persistence
+            try:
+                with open('data/tv_display_data.json', 'w') as f:
+                    json.dump(tv_display_data, f)
+            except Exception as e:
+                print(f"Warning: Could not write TV display data to file: {e}")
+            
+            return jsonify({
+                "success": True,
+                "message": "TV display data updated"
+            })
+            
+        except Exception as e:
+            print(f"Error handling TV display data: {e}")
+            return jsonify({"error": str(e)}), 500
+
+# Serve public TV display page
+@app.route('/public_tv')
+def public_tv_display_page():
+    """Serve the public TV display page"""
+    return send_from_directory('.', 'public_tv.html')
 
 if __name__ == '__main__':
     # Add mysql-connector-python to requirements.txt if not already there
