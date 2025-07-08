@@ -2336,38 +2336,47 @@ def set_admin_active():
                 # First check if room_name column exists
                 cursor.execute("SHOW COLUMNS FROM admins LIKE 'room_name'")
                 if not cursor.fetchone():
-                    cursor.execute("ALTER TABLE admins ADD COLUMN room_name VARCHAR(100) DEFAULT NULL")
-                    conn.commit()
-                    print("Added room_name column to admins table")
-                
-                # Update both is_active and room_name
-                cursor.execute("UPDATE admins SET is_active = %s, room_name = %s WHERE id = %s", (is_active, room_name, admin_id))
+                    try:
+                        cursor.execute("ALTER TABLE admins ADD COLUMN room_name VARCHAR(255)")
+                        conn.commit()
+                        print("Added room_name column to admins table")
+                    except mysql.connector.Error as e:
+                        return jsonify({"error": f"Failed to add room_name column: {str(e)}"}), 500
+                        
+                # Update both room_name and is_active
+                cursor.execute("UPDATE admins SET room_name = %s, is_active = %s WHERE id = %s", 
+                              (room_name, is_active, admin_id))
             else:
-                # Just update is_active, don't touch room_name
+                # Just update is_active
                 cursor.execute("UPDATE admins SET is_active = %s WHERE id = %s", (is_active, admin_id))
-                
+            
             conn.commit()
             
-            # Read back the updated admin
-            cursor.execute("SELECT id, full_name, is_active, room_name FROM admins WHERE id = %s", (admin_id,))
-            admin = cursor.fetchone()
+            # Verify the update by fetching the current admin data
+            cursor.execute("SELECT id, full_name, room_name, is_active FROM admins WHERE id = %s", (admin_id,))
+            admin_row = cursor.fetchone()
             
-            if admin:
-                # Access admin as a tuple (id, full_name, is_active, room_name)
-                return jsonify({
-                    "success": True,
-                    "message": f"Admin ID {admin_id} has been set to {is_active}",
-                    "admin": {
-                        "id": admin[0],
-                        "name": admin[1],
-                        "is_active": admin[2],
-                        "room_name": admin[3]
-                    }
-                })
-            else:
+            if not admin_row:
                 return jsonify({"error": f"Admin ID {admin_id} not found"}), 404
                 
-        except Exception as e:
+            # Create response with the actual data from the database
+            admin_info = {
+                "id": admin_row[0],
+                "name": admin_row[1],
+                "room_name": admin_row[2],
+                "is_active": admin_row[3]
+            }
+            
+            return jsonify({
+                "success": True,
+                "message": f"Admin ID {admin_id} has been set to {is_active}",
+                "admin": admin_info
+            })
+            
+        except mysql.connector.Error as e:
+            if conn:
+                conn.rollback()
+            print(f"Database error in set_admin_active: {str(e)}")
             return jsonify({"error": str(e)}), 500
         finally:
             if cursor:
@@ -2376,7 +2385,8 @@ def set_admin_active():
                 conn.close()
                 
     except Exception as e:
-        return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
+        print(f"Error in set_admin_active: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/create_test_request', methods=['POST'])
 def create_test_request():
