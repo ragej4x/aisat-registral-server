@@ -3095,14 +3095,20 @@ def handle_tv_display_data():
             
             # Write data to a JSON file for persistence
             try:
+                # Ensure data directory exists
+                os.makedirs('data', exist_ok=True)
+                
                 with open('data/tv_display_data.json', 'w') as f:
                     json.dump(tv_display_data, f)
+                    print(f"TV display data written to file, {len(tv_display_data)} displays stored")
             except Exception as e:
                 print(f"Warning: Could not write TV display data to file: {e}")
             
             return jsonify({
                 "success": True,
-                "message": "TV display data updated"
+                "message": "TV display data updated",
+                "displays": len(tv_display_data),
+                "admin_windows": len(data.get('adminWindows', {})) - 1 if 'lastUpdated' in data.get('adminWindows', {}) else len(data.get('adminWindows', {}))
             })
             
         except Exception as e:
