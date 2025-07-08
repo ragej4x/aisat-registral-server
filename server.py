@@ -274,31 +274,32 @@ def get_pending_requests():
         
         # Manually build a new list of dictionaries to ensure data is clean for JSON
         users_processed = []
-        for user_row in users_raw:
-            processed_user = {
-                "id": str(user_row["id"]) if user_row["id"] is not None else "",
-                "idno": str(user_row["idno"]) if user_row["idno"] is not None else "",
-                "name": str(user_row["name"]) if user_row["name"] is not None else "",
-                "email": str(user_row["email"]) if user_row["email"] is not None else "",
-                "level": str(user_row["level"]) if user_row["level"] is not None else "",
-                "method": str(user_row["method"]) if user_row["method"] is not None else "",
-                "payment": str(user_row["payment"]) if user_row["payment"] is not None else "",
-                "status": str(user_row["status"]) if user_row["status"] is not None else "",
-                "counter": int(user_row["counter"]) if user_row["counter"] is not None else None,
-                "request_id": str(user_row["request_id"]) if user_row["request_id"] is not None else "",
-                "schedule": None  # Default to None
-            }
-            
-            # Handle datetime conversion safely
-            schedule = user_row["schedule"]
-            if schedule:
-                if isinstance(schedule, datetime):
-                    processed_user['schedule'] = schedule.isoformat()
-                else:
-                    # Try to convert to string if it's not a datetime object
-                    processed_user['schedule'] = str(schedule)
-                    
-            users_processed.append(processed_user)
+        if users_raw:  # Check if users_raw is not None before iterating
+            for user_row in users_raw:
+                processed_user = {
+                    "id": str(user_row["id"]) if user_row["id"] is not None else "",
+                    "idno": str(user_row["idno"]) if user_row["idno"] is not None else "",
+                    "name": str(user_row["name"]) if user_row["name"] is not None else "",
+                    "email": str(user_row["email"]) if user_row["email"] is not None else "",
+                    "level": str(user_row["level"]) if user_row["level"] is not None else "",
+                    "method": str(user_row["method"]) if user_row["method"] is not None else "",
+                    "payment": str(user_row["payment"]) if user_row["payment"] is not None else "",
+                    "status": str(user_row["status"]) if user_row["status"] is not None else "",
+                    "counter": int(user_row["counter"]) if user_row["counter"] is not None else None,
+                    "request_id": str(user_row["request_id"]) if user_row["request_id"] is not None else "",
+                    "schedule": None  # Default to None
+                }
+                
+                # Handle datetime conversion safely
+                schedule = user_row["schedule"]
+                if schedule:
+                    if isinstance(schedule, datetime):
+                        processed_user['schedule'] = schedule.isoformat()
+                    else:
+                        # Try to convert to string if it's not a datetime object
+                        processed_user['schedule'] = str(schedule)
+                        
+                users_processed.append(processed_user)
             
         return jsonify(users_processed)
     except Exception as e:
@@ -324,30 +325,31 @@ def get_rejected_requests():
         users_raw = cursor.fetchall()
         
         users_processed = []
-        for user_row in users_raw:
-            processed_user = {
-                "id": str(user_row["id"]) if user_row["id"] is not None else "",
-                "idno": str(user_row["idno"]) if user_row["idno"] is not None else "",
-                "name": str(user_row["name"]) if user_row["name"] is not None else "",
-                "email": str(user_row["email"]) if user_row["email"] is not None else "",
-                "level": str(user_row["level"]) if user_row["level"] is not None else "",
-                "method": str(user_row["method"]) if user_row["method"] is not None else "",
-                "payment": str(user_row["payment"]) if user_row["payment"] is not None else "",
-                "status": str(user_row["status"]) if user_row["status"] is not None else "",
-                "request_id": str(user_row["request_id"]) if user_row["request_id"] is not None else "",
-                "schedule": None  # Default to None
-            }
-            
-            # Handle datetime conversion safely
-            schedule = user_row["schedule"]
-            if schedule:
-                if isinstance(schedule, datetime):
-                    processed_user['schedule'] = schedule.isoformat()
-                else:
-                    # Try to convert to string if it's not a datetime object
-                    processed_user['schedule'] = str(schedule)
-                    
-            users_processed.append(processed_user)
+        if users_raw:  # Check if users_raw is not None before iterating
+            for user_row in users_raw:
+                processed_user = {
+                    "id": str(user_row["id"]) if user_row["id"] is not None else "",
+                    "idno": str(user_row["idno"]) if user_row["idno"] is not None else "",
+                    "name": str(user_row["name"]) if user_row["name"] is not None else "",
+                    "email": str(user_row["email"]) if user_row["email"] is not None else "",
+                    "level": str(user_row["level"]) if user_row["level"] is not None else "",
+                    "method": str(user_row["method"]) if user_row["method"] is not None else "",
+                    "payment": str(user_row["payment"]) if user_row["payment"] is not None else "",
+                    "status": str(user_row["status"]) if user_row["status"] is not None else "",
+                    "request_id": str(user_row["request_id"]) if user_row["request_id"] is not None else "",
+                    "schedule": None  # Default to None
+                }
+                
+                # Handle datetime conversion safely
+                schedule = user_row["schedule"]
+                if schedule:
+                    if isinstance(schedule, datetime):
+                        processed_user['schedule'] = schedule.isoformat()
+                    else:
+                        # Try to convert to string if it's not a datetime object
+                        processed_user['schedule'] = str(schedule)
+                        
+                users_processed.append(processed_user)
 
         return jsonify(users_processed)
     except Exception as e:
@@ -508,10 +510,11 @@ def get_calendar():
         schedule_data = cursor.fetchall()
         
         calendar_data = {}
-        for entry in schedule_data:
-            if entry.get('date'):
-                date_str = entry['date'].strftime('%Y-%m-%d')
-                calendar_data[date_str] = entry.get('status')
+        if schedule_data:  # Check if schedule_data is not None before iterating
+            for entry in schedule_data:
+                if entry.get('date'):
+                    date_str = entry['date'].strftime('%Y-%m-%d')
+                    calendar_data[date_str] = entry.get('status')
         
         return jsonify(calendar_data)
     
@@ -891,18 +894,19 @@ def get_users():
         
         # Process the results
         users = []
-        for user in users_raw:
-            # Convert values to strings and handle None
-            processed_user = {
-                "id": str(user["id"]) if user["id"] is not None else "",
-                "idno": str(user["idno"]) if user["idno"] is not None else "",
-                "name": str(user["name"]) if user["name"] is not None else "",
-                "email": str(user["email"]) if user["email"] is not None else "",
-                "level": str(user["level"]) if user["level"] is not None else "",
-                "course": str(user["course"]) if user["course"] is not None else "",
-                "strand": str(user["strand"]) if user["strand"] is not None else ""
-            }
-            users.append(processed_user)
+        if users_raw:  # Check if users_raw is not None before iterating
+            for user in users_raw:
+                # Convert values to strings and handle None
+                processed_user = {
+                    "id": str(user["id"]) if user["id"] is not None else "",
+                    "idno": str(user["idno"]) if user["idno"] is not None else "",
+                    "name": str(user["name"]) if user["name"] is not None else "",
+                    "email": str(user["email"]) if user["email"] is not None else "",
+                    "level": str(user["level"]) if user["level"] is not None else "",
+                    "course": str(user["course"]) if user["course"] is not None else "",
+                    "strand": str(user["strand"]) if user["strand"] is not None else ""
+                }
+                users.append(processed_user)
         
         return jsonify(users)
     except Exception as e:
@@ -1116,28 +1120,29 @@ def get_user_requests():
         
         # Process the results
         requests_processed = []
-        for req in requests_raw:
-            processed_req = {
-                "id": str(req["id"]) if req["id"] is not None else "",
-                "name": str(req["name"]) if req["name"] is not None else "",
-                "level": str(req["level"]) if req["level"] is not None else "",
-                "status": str(req["status"]) if req["status"] is not None else "",
-                "counter": int(req["counter"]) if req["counter"] is not None else None,
-                "request_id": str(req["request_id"]) if req["request_id"] is not None else "",
-                "schedule": None,
-                "user_id": str(req["id"]) if req["id"] is not None else "",  # Add user_id field
-                "is_current_user": str(req["id"]) == user_id  # Add flag to easily identify current user's requests
-            }
-            
-            # Handle datetime conversion safely
-            schedule = req["schedule"]
-            if schedule:
-                if isinstance(schedule, datetime):
-                    processed_req['schedule'] = schedule.isoformat()
-                else:
-                    processed_req['schedule'] = str(schedule)
-            
-            requests_processed.append(processed_req)
+        if requests_raw:  # Check if requests_raw is not None before iterating
+            for req in requests_raw:
+                processed_req = {
+                    "id": str(req["id"]) if req["id"] is not None else "",
+                    "name": str(req["name"]) if req["name"] is not None else "",
+                    "level": str(req["level"]) if req["level"] is not None else "",
+                    "status": str(req["status"]) if req["status"] is not None else "",
+                    "counter": int(req["counter"]) if req["counter"] is not None else None,
+                    "request_id": str(req["request_id"]) if req["request_id"] is not None else "",
+                    "schedule": None,
+                    "user_id": str(req["id"]) if req["id"] is not None else "",  # Add user_id field
+                    "is_current_user": str(req["id"]) == user_id  # Add flag to easily identify current user's requests
+                }
+                
+                # Handle datetime conversion safely
+                schedule = req["schedule"]
+                if schedule:
+                    if isinstance(schedule, datetime):
+                        processed_req['schedule'] = schedule.isoformat()
+                    else:
+                        processed_req['schedule'] = str(schedule)
+                
+                requests_processed.append(processed_req)
         
         return jsonify(requests_processed)
     
@@ -1175,30 +1180,31 @@ def get_scheduled_requests():
         users_raw = cursor.fetchall()
         
         users_processed = []
-        for user_row in users_raw:
-            processed_user = {
-                "id": str(user_row["id"]) if user_row["id"] is not None else "",
-                "idno": str(user_row["idno"]) if user_row["idno"] is not None else "",
-                "name": str(user_row["name"]) if user_row["name"] is not None else "",
-                "email": str(user_row["email"]) if user_row["email"] is not None else "",
-                "level": str(user_row["level"]) if user_row["level"] is not None else "",
-                "method": str(user_row["method"]) if user_row["method"] is not None else "",
-                "payment": str(user_row["payment"]) if user_row["payment"] is not None else "",
-                "status": str(user_row["status"]) if user_row["status"] is not None else "",
-                "request_id": str(user_row["request_id"]) if user_row["request_id"] is not None else "",
-                "schedule": None  # Default to None
-            }
-            
-            # Handle datetime conversion safely
-            schedule = user_row["schedule"]
-            if schedule:
-                if isinstance(schedule, datetime):
-                    processed_user['schedule'] = schedule.isoformat()
-                else:
-                    # Try to convert to string if it's not a datetime object
-                    processed_user['schedule'] = str(schedule)
-                    
-            users_processed.append(processed_user)
+        if users_raw:  # Check if users_raw is not None before iterating
+            for user_row in users_raw:
+                processed_user = {
+                    "id": str(user_row["id"]) if user_row["id"] is not None else "",
+                    "idno": str(user_row["idno"]) if user_row["idno"] is not None else "",
+                    "name": str(user_row["name"]) if user_row["name"] is not None else "",
+                    "email": str(user_row["email"]) if user_row["email"] is not None else "",
+                    "level": str(user_row["level"]) if user_row["level"] is not None else "",
+                    "method": str(user_row["method"]) if user_row["method"] is not None else "",
+                    "payment": str(user_row["payment"]) if user_row["payment"] is not None else "",
+                    "status": str(user_row["status"]) if user_row["status"] is not None else "",
+                    "request_id": str(user_row["request_id"]) if user_row["request_id"] is not None else "",
+                    "schedule": None  # Default to None
+                }
+                
+                # Handle datetime conversion safely
+                schedule = user_row["schedule"]
+                if schedule:
+                    if isinstance(schedule, datetime):
+                        processed_user['schedule'] = schedule.isoformat()
+                    else:
+                        # Try to convert to string if it's not a datetime object
+                        processed_user['schedule'] = str(schedule)
+                        
+                users_processed.append(processed_user)
 
         return jsonify(users_processed)
     except Exception as e:
@@ -1291,15 +1297,16 @@ def auto_reject_expired_users():
                     expired_users = cursor.fetchall()
                     
                     # Auto-reject each expired user
-                    for user in expired_users:
-                        user_id = user['id']
-                        print(f"Auto-rejecting user {user_id} due to expired counter")
-                        cursor.execute("UPDATE users SET status = 'rejected', counter = NULL WHERE id = %s", (user_id,))
+                    if expired_users:  # Check if expired_users is not None before iterating
+                        for user in expired_users:
+                            user_id = user['id']
+                            print(f"Auto-rejecting user {user_id} due to expired counter")
+                            cursor.execute("UPDATE users SET status = 'rejected', counter = NULL WHERE id = %s", (user_id,))
                     
-                    if expired_users:
-                        print(f"Auto-rejected {len(expired_users)} users with expired timers")
+                        if expired_users:
+                            print(f"Auto-rejected {len(expired_users)} users with expired timers")
                     
-                    conn.commit()
+                        conn.commit()
                 finally:
                     cursor.close()
                     conn.close()
@@ -1311,7 +1318,8 @@ def auto_reject_expired_users():
                 try:
                     # Count how many rows will be affected for logging
                     cursor.execute("SELECT COUNT(*) FROM users WHERE status = 'oncall' AND counter > 0")
-                    count = cursor.fetchone()[0]
+                    count_result = cursor.fetchone()
+                    count = count_result[0] if count_result else 0
                     
                     # Decrement counter for all oncall users
                     cursor.execute("UPDATE users SET counter = counter - 1 WHERE status = 'oncall' AND counter > 0")
@@ -1514,17 +1522,18 @@ def get_priority_users():
         
         # Convert to safe dictionaries
         safe_users = []
-        for user in users:
-            safe_user = {
-                "id": str(user["id"]) if user["id"] is not None else "",
-                "idno": str(user["idno"]) if user["idno"] is not None else "",
-                "name": str(user["name"]) if user["name"] is not None else "",
-                "email": str(user["email"]) if user["email"] is not None else "",
-                "level": str(user["level"]) if user["level"] is not None else "",
-                "course": str(user["course"]) if user["course"] is not None else "",
-                "strand": str(user["strand"]) if user["strand"] is not None else ""
-            }
-            safe_users.append(safe_user)
+        if users:  # Check if users is not None before iterating
+            for user in users:
+                safe_user = {
+                    "id": str(user["id"]) if user["id"] is not None else "",
+                    "idno": str(user["idno"]) if user["idno"] is not None else "",
+                    "name": str(user["name"]) if user["name"] is not None else "",
+                    "email": str(user["email"]) if user["email"] is not None else "",
+                    "level": str(user["level"]) if user["level"] is not None else "",
+                    "course": str(user["course"]) if user["course"] is not None else "",
+                    "strand": str(user["strand"]) if user["strand"] is not None else ""
+                }
+                safe_users.append(safe_user)
         
         return jsonify(safe_users)
     
@@ -2093,11 +2102,85 @@ def admin_update_status():
         
     # For actual POST requests
     try:
-        # Just return success for now
-        return jsonify({
-            "success": True,
-            "message": "Status updated successfully"
-        })
+        data = request.get_json()
+        admin_id = data.get('admin_id')
+        is_active = data.get('is_active', 'yes')
+        room_name = data.get('room_name')
+        filter_settings = data.get('filter_settings')
+        
+        if not admin_id:
+            return jsonify({"error": "Admin ID is required"}), 400
+            
+        conn, cursor = None, None
+        try:
+            conn = get_db_connection()
+            if not conn:
+                return jsonify({"error": "Database connection failed"}), 500
+                
+            cursor = conn.cursor()
+            
+            # Make sure is_active column exists
+            cursor.execute("SHOW COLUMNS FROM admins LIKE 'is_active'")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE admins ADD COLUMN is_active ENUM('yes', 'no') DEFAULT 'no'")
+                conn.commit()
+                
+            # Make sure room_name column exists
+            cursor.execute("SHOW COLUMNS FROM admins LIKE 'room_name'")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE admins ADD COLUMN room_name VARCHAR(100) DEFAULT NULL")
+                conn.commit()
+            
+            # Update admin status and room name
+            if room_name:
+                cursor.execute("UPDATE admins SET is_active = %s, room_name = %s WHERE id = %s", 
+                              (is_active, room_name, admin_id))
+            else:
+                cursor.execute("UPDATE admins SET is_active = %s WHERE id = %s", 
+                              (is_active, admin_id))
+            
+            # If filter settings provided, update them in admin_settings
+            if filter_settings:
+                # Make sure admin_settings table exists
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS admin_settings (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        admin_id INT NOT NULL,
+                        settings TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        UNIQUE KEY unique_admin (admin_id)
+                    )
+                """)
+                conn.commit()
+                
+                import json
+                settings = {
+                    "filter_settings": filter_settings
+                }
+                settings_json = json.dumps(settings)
+                
+                # Check if settings already exist
+                cursor.execute("SELECT id FROM admin_settings WHERE admin_id = %s", (admin_id,))
+                if cursor.fetchone():
+                    cursor.execute("UPDATE admin_settings SET settings = %s WHERE admin_id = %s", 
+                                 (settings_json, admin_id))
+                else:
+                    cursor.execute("INSERT INTO admin_settings (admin_id, settings) VALUES (%s, %s)", 
+                                 (admin_id, settings_json))
+            
+            conn.commit()
+            
+            return jsonify({
+                "success": True,
+                "message": "Admin status updated successfully"
+            })
+        finally:
+            if cursor:
+                cursor.close()
+            if conn and conn.is_connected():
+                conn.close()
+                
     except Exception as e:
         print(f"Error in admin_update_status: {str(e)}")
         return jsonify({"error": str(e)}), 500
@@ -2286,6 +2369,107 @@ def set_admin_active():
     except Exception as e:
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
+@app.route('/api/admin/active-status-check', methods=['GET'])
+def check_admin_active_status():
+    """Endpoint to check if any admin is active"""
+    conn, cursor = None, None
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        cursor = conn.cursor()
+        
+        # Check if is_active column exists
+        cursor.execute("SHOW COLUMNS FROM admins LIKE 'is_active'")
+        if not cursor.fetchone():
+            return jsonify({"active_admins": []})
+        
+        # Get all active admins
+        cursor.execute("SELECT id, full_name, room_name FROM admins WHERE is_active = 'yes'")
+        active_admins = []
+        if active_admins:  # Check if active_admins is not None before iterating
+            for row in cursor.fetchall():
+                active_admins.append({
+                    "id": row[0],
+                    "name": row[1],
+                    "room_name": row[2]
+                })
+        
+        return jsonify({"active_admins": active_admins})
+        
+    except Exception as e:
+        print(f"Error checking admin active status: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+@app.route('/api/tv_pending_requests', methods=['GET'])
+def get_tv_pending_requests():
+    """Public endpoint for TV display to get pending requests without authentication"""
+    conn, cursor = None, None
+    try:
+        conn = get_db_connection()
+        if not conn:
+             return jsonify({"error": "Database connection failed"}), 500
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if assigned_to column exists
+        cursor.execute("SHOW COLUMNS FROM users LIKE 'assigned_to'")
+        if not cursor.fetchone():
+            try:
+                cursor.execute("ALTER TABLE users ADD COLUMN assigned_to INT DEFAULT NULL")
+                conn.commit()
+                print("Added assigned_to column to users table")
+            except mysql.connector.Error as e:
+                print(f"Error adding assigned_to column: {e}")
+        
+        # Include assigned_to in the query
+        cursor.execute("SELECT id, idno, name, level, method, payment, schedule, status, counter, request_id, assigned_to FROM users WHERE status IN ('pending', 'oncall') ORDER BY schedule ASC")
+        users_raw = cursor.fetchall()
+        
+        # Manually build a new list of dictionaries to ensure data is clean for JSON
+        users_processed = []
+        if users_raw:  # Check if users_raw is not None before iterating
+            for user_row in users_raw:
+                processed_user = {
+                    "id": str(user_row["id"]) if user_row["id"] is not None else "",
+                    "idno": str(user_row["idno"]) if user_row["idno"] is not None else "",
+                    "name": str(user_row["name"]) if user_row["name"] is not None else "",
+                    "level": str(user_row["level"]) if user_row["level"] is not None else "",
+                    "method": str(user_row["method"]) if user_row["method"] is not None else "",
+                    "payment": str(user_row["payment"]) if user_row["payment"] is not None else "",
+                    "status": str(user_row["status"]) if user_row["status"] is not None else "",
+                    "counter": int(user_row["counter"]) if user_row["counter"] is not None else None,
+                    "request_id": str(user_row["request_id"]) if user_row["request_id"] is not None else "",
+                    "assigned_to": int(user_row["assigned_to"]) if user_row["assigned_to"] is not None else None,
+                    "schedule": None  # Default to None
+                }
+                
+                # Handle datetime conversion safely
+                schedule = user_row["schedule"]
+                if schedule:
+                    if isinstance(schedule, datetime):
+                        processed_user['schedule'] = schedule.isoformat()
+                    else:
+                        # Try to convert to string if it's not a datetime object
+                        processed_user['schedule'] = str(schedule)
+                        
+                users_processed.append(processed_user)
+            
+        return jsonify(users_processed)
+    except Exception as e:
+        print(f"Error in tv_pending_requests: {str(e)}")  # Log the error for debugging
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
 @app.route('/api/create_test_request', methods=['POST'])
 def create_test_request():
     """Endpoint to create test requests with assigned_to field"""
@@ -2354,105 +2538,6 @@ def create_test_request():
     except Exception as e:
         print(f"Error processing test request: {str(e)}")
         return jsonify({"error": str(e)}), 500
-
-@app.route('/api/tv_pending_requests', methods=['GET'])
-def get_tv_pending_requests():
-    """Public endpoint for TV display to get pending requests without authentication"""
-    conn, cursor = None, None
-    try:
-        conn = get_db_connection()
-        if not conn:
-             return jsonify({"error": "Database connection failed"}), 500
-        cursor = conn.cursor(dictionary=True)
-        
-        # Check if assigned_to column exists
-        cursor.execute("SHOW COLUMNS FROM users LIKE 'assigned_to'")
-        if not cursor.fetchone():
-            try:
-                cursor.execute("ALTER TABLE users ADD COLUMN assigned_to INT DEFAULT NULL")
-                conn.commit()
-                print("Added assigned_to column to users table")
-            except mysql.connector.Error as e:
-                print(f"Error adding assigned_to column: {e}")
-        
-        # Include assigned_to in the query
-        cursor.execute("SELECT id, idno, name, level, method, payment, schedule, status, counter, request_id, assigned_to FROM users WHERE status IN ('pending', 'oncall') ORDER BY schedule ASC")
-        users_raw = cursor.fetchall()
-        
-        # Manually build a new list of dictionaries to ensure data is clean for JSON
-        users_processed = []
-        for user_row in users_raw:
-            processed_user = {
-                "id": str(user_row["id"]) if user_row["id"] is not None else "",
-                "idno": str(user_row["idno"]) if user_row["idno"] is not None else "",
-                "name": str(user_row["name"]) if user_row["name"] is not None else "",
-                "level": str(user_row["level"]) if user_row["level"] is not None else "",
-                "method": str(user_row["method"]) if user_row["method"] is not None else "",
-                "payment": str(user_row["payment"]) if user_row["payment"] is not None else "",
-                "status": str(user_row["status"]) if user_row["status"] is not None else "",
-                "counter": int(user_row["counter"]) if user_row["counter"] is not None else None,
-                "request_id": str(user_row["request_id"]) if user_row["request_id"] is not None else "",
-                "assigned_to": int(user_row["assigned_to"]) if user_row["assigned_to"] is not None else None,
-                "schedule": None  # Default to None
-            }
-            
-            # Handle datetime conversion safely
-            schedule = user_row["schedule"]
-            if schedule:
-                if isinstance(schedule, datetime):
-                    processed_user['schedule'] = schedule.isoformat()
-                else:
-                    # Try to convert to string if it's not a datetime object
-                    processed_user['schedule'] = str(schedule)
-                    
-            users_processed.append(processed_user)
-            
-        return jsonify(users_processed)
-    except Exception as e:
-        print(f"Error in tv_pending_requests: {str(e)}")  # Log the error for debugging
-        return jsonify({"error": str(e)}), 500
-    finally:
-        if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
-            conn.close()
-
-@app.route('/api/admin/active-status-check', methods=['GET'])
-def check_admin_active_status():
-    """Endpoint to check if any admin is active"""
-    conn, cursor = None, None
-    try:
-        conn = get_db_connection()
-        if not conn:
-            return jsonify({"error": "Database connection failed"}), 500
-        
-        cursor = conn.cursor()
-        
-        # Check if is_active column exists
-        cursor.execute("SHOW COLUMNS FROM admins LIKE 'is_active'")
-        if not cursor.fetchone():
-            return jsonify({"active_admins": []})
-        
-        # Get all active admins
-        cursor.execute("SELECT id, full_name, room_name FROM admins WHERE is_active = 'yes'")
-        active_admins = []
-        for row in cursor.fetchall():
-            active_admins.append({
-                "id": row[0],
-                "name": row[1],
-                "room_name": row[2]
-            })
-        
-        return jsonify({"active_admins": active_admins})
-        
-    except Exception as e:
-        print(f"Error checking admin active status: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-    finally:
-        if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
-            conn.close()
 
 # Announcements data file path
 ANNOUNCEMENTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'announcements.json')
