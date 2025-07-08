@@ -2125,11 +2125,19 @@ def admin_update_status():
         
         # Get is_active status from request body
         request_data = request.get_json()
-        is_active = request_data.get('is_active', 'yes')
+        if not request_data:
+            return jsonify({"error": "Missing request body"}), 400
+            
+        # Extract is_active from request data, ensuring it's explicitly set
+        if 'is_active' not in request_data:
+            return jsonify({"error": "Missing is_active parameter"}), 400
+            
+        is_active = request_data.get('is_active')
+        print(f"Received is_active value: {is_active}")
         
         # Validate is_active parameter
         if is_active not in ['yes', 'no']:
-            is_active = 'yes'  # Default to active if invalid value
+            return jsonify({"error": "is_active must be 'yes' or 'no'"}), 400
         
         conn, cursor = None, None
         try:
@@ -2154,7 +2162,7 @@ def admin_update_status():
             conn.commit()
             
             # Get the updated admin info
-            cursor.execute("SELECT id, full_name, room_name FROM admins WHERE id = %s", (admin_id,))
+            cursor.execute("SELECT id, full_name, room_name, is_active FROM admins WHERE id = %s", (admin_id,))
             admin_row = cursor.fetchone()
             
             if not admin_row:
@@ -2164,7 +2172,7 @@ def admin_update_status():
                 "id": admin_row[0],
                 "name": admin_row[1],
                 "room_name": admin_row[2],
-                "is_active": is_active
+                "is_active": admin_row[3]
             }
             
             return jsonify({
