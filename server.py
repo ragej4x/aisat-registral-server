@@ -3239,6 +3239,325 @@ def handle_tv_display_data():
             print(f"Error handling TV display data: {e}")
             return jsonify({"error": str(e)}), 500
 
+# Ticker Messages API Endpoints
+
+@app.route('/api/create_ticker_messages_table', methods=['GET'])
+@token_required
+def create_ticker_messages_table():
+    """Create ticker messages table if it doesn't exist (admin only)"""
+    if not g.user.get('is_admin'):
+        return jsonify({"error": "Admin privileges required"}), 403
+    
+    conn, cursor = None, None
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        cursor = conn.cursor()
+        
+        # Create ticker_messages table if it doesn't exist
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ticker_messages (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                message TEXT NOT NULL,
+                display_order INT DEFAULT 0,
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+        """)
+        
+        conn.commit()
+        
+        return jsonify({"success": True, "message": "Ticker messages table created successfully"})
+    except Exception as e:
+        print(f"Error creating ticker messages table: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+@app.route('/api/ticker_messages', methods=['GET'])
+def get_ticker_messages():
+    """Get all active ticker messages"""
+    conn, cursor = None, None
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        cursor = conn.cursor(dictionary=True)
+        
+        # Try to create the table if it doesn't exist
+        try:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS ticker_messages (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    message TEXT NOT NULL,
+                    display_order INT DEFAULT 0,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                )
+            """)
+            conn.commit()
+        except Exception as e:
+            print(f"Error creating ticker messages table: {str(e)}")
+            # Continue with the operation even if table creation fails
+        
+        # Get all active ticker messages, ordered by display_order
+        cursor.execute("""
+            SELECT id, message, display_order, is_active
+            FROM ticker_messages
+            WHERE is_active = TRUE
+            ORDER BY display_order ASC
+        """)
+        
+        messages_raw = cursor.fetchall()
+        
+        # Check if there are any messages
+        if not messages_raw or len(messages_raw) == 0:
+            # Return default messages if none found in database
+            default_messages = [
+                "Welcome to AISAT College Registral Services",
+                "Enrollment for the second semester is now open",
+                "Please prepare your requirements before queuing",
+                "For inquiries, please contact 123-4567",
+                "Have a great day!"
+            ]
+            
+            # Insert default messages into the database
+            try:
+                for i, msg in enumerate(default_messages):
+                    cursor.execute("""
+                        INSERT INTO ticker_messages (message, display_order)
+                        VALUES (%s, %s)
+                    """, (msg, i))
+                conn.commit()
+            except Exception as e:
+                print(f"Error inserting default ticker messages: {str(e)}")
+            
+            # Return default messages
+            return jsonify({
+                "messages": default_messages
+            })
+        
+        # Process the messages
+        messages = []
+        for msg in messages_raw:
+            messages.append(str(msg["message"]) if msg["message"] is not None else "")
+        
+        return jsonify({
+            "messages": messages
+        })
+        
+    except Exception as e:
+        print(f"Error getting ticker messages: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+@app.route('/api/ticker_messages/all', methods=['GET'])
+@token_required
+def get_all_ticker_messages():
+    """Get all ticker messages with additional details (for admin UI)"""
+    if not g.user.get('is_admin'):
+        return jsonify({"error": "Admin privileges required"}), 403
+    
+    conn, cursor = None, None
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get all ticker messages, ordered by display_order
+        cursor.execute("""
+            SELECT id, message, display_order, is_active, 
+                   created_at, updated_at
+            FROM ticker_messages
+            ORDER BY display_order ASC
+        """)
+        
+        messages_raw = cursor.fetchall()
+        
+        # Process the messages
+        messages = []
+        for msg in messages_raw:
+            processed_msg = {
+                "id": str(msg["id"]) if msg["id"] is not None else "",
+                "message": str(msg["message"]) if msg["message"] is not None else "",
+                "display_order": int(msg["display_order"]) if msg["display_order"] is not None else 0,
+                "is_active": bool(msg["is_active"]) if msg["is_active"] is not None else True,
+                "created_at": msg["created_at"].isoformat() if msg["created_at"] is not None else "",
+                "updated_at": msg["updated_at"].isoformat() if msg["updated_at"] is not None else ""
+            }
+            messages.append(processed_msg)
+        
+        return jsonify({
+            "messages": messages
+        })
+        
+    except Exception as e:
+        print(f"Error getting all ticker messages: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+@app.route('/api/ticker_messages', methods=['POST'])
+@token_required
+def save_ticker_messages():
+    """Save ticker messages"""
+    if not g.user.get('is_admin'):
+        return jsonify({"error": "Admin privileges required"}), 403
+    
+    data = request.get_json()
+    if not data or 'messages' not in data:
+        return jsonify({"error": "No messages provided"}), 400
+    
+    messages = data.get('messages', [])
+    
+    conn, cursor = None, None
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        cursor = conn.cursor()
+        
+        # First clear existing messages (soft delete by setting is_active to FALSE)
+        cursor.execute("UPDATE ticker_messages SET is_active = FALSE")
+        
+        # Insert new messages
+        for i, message in enumerate(messages):
+            if message.strip():  # Only insert non-empty messages
+                cursor.execute("""
+                    INSERT INTO ticker_messages (message, display_order, is_active)
+                    VALUES (%s, %s, TRUE)
+                """, (message, i))
+        
+        conn.commit()
+        
+        return jsonify({
+            "success": True,
+            "message": "Ticker messages saved successfully",
+            "count": len(messages)
+        })
+        
+    except Exception as e:
+        print(f"Error saving ticker messages: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+@app.route('/api/ticker_messages/<int:message_id>', methods=['PUT'])
+@token_required
+def update_ticker_message(message_id):
+    """Update a specific ticker message"""
+    if not g.user.get('is_admin'):
+        return jsonify({"error": "Admin privileges required"}), 403
+    
+    data = request.get_json()
+    if not data or 'message' not in data:
+        return jsonify({"error": "No message provided"}), 400
+    
+    message = data.get('message')
+    is_active = data.get('is_active', True)
+    display_order = data.get('display_order')
+    
+    conn, cursor = None, None
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        cursor = conn.cursor()
+        
+        # Build update query based on provided fields
+        update_parts = ["message = %s", "is_active = %s"]
+        params = [message, is_active]
+        
+        if display_order is not None:
+            update_parts.append("display_order = %s")
+            params.append(display_order)
+        
+        params.append(message_id)  # Add message_id for WHERE clause
+        
+        # Update the message
+        query = "UPDATE ticker_messages SET " + ", ".join(update_parts) + " WHERE id = %s"
+        cursor.execute(query, tuple(params))
+        
+        if cursor.rowcount == 0:
+            return jsonify({"error": "Message not found"}), 404
+            
+        conn.commit()
+        
+        return jsonify({
+            "success": True,
+            "message": "Ticker message updated successfully",
+            "id": message_id
+        })
+        
+    except Exception as e:
+        print(f"Error updating ticker message: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+@app.route('/api/ticker_messages/<int:message_id>', methods=['DELETE'])
+@token_required
+def delete_ticker_message(message_id):
+    """Delete a specific ticker message"""
+    if not g.user.get('is_admin'):
+        return jsonify({"error": "Admin privileges required"}), 403
+    
+    conn, cursor = None, None
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        cursor = conn.cursor()
+        
+        # Delete the message
+        cursor.execute("DELETE FROM ticker_messages WHERE id = %s", (message_id,))
+        
+        if cursor.rowcount == 0:
+            return jsonify({"error": "Message not found"}), 404
+            
+        conn.commit()
+        
+        return jsonify({
+            "success": True,
+            "message": "Ticker message deleted successfully",
+            "id": message_id
+        })
+        
+    except Exception as e:
+        print(f"Error deleting ticker message: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
 # Serve public TV display page
 @app.route('/public_tv')
 def public_tv_display_page():
