@@ -3564,6 +3564,60 @@ def public_tv_display_page():
     """Serve the public TV display page"""
     return send_from_directory('.', 'public_tv.html')
 
+@app.route('/api/user/change_password', methods=['POST'])
+@token_required
+def change_user_password():
+    """Change a user's password (admin only)"""
+    if not g.user.get('is_admin'):
+        return jsonify({"error": "Admin privileges required"}), 403
+    
+    data = request.get_json()
+    user_id = data.get('id')
+    user_idno = data.get('idno')
+    new_password = data.get('password')
+    
+    if not new_password:
+        return jsonify({"error": "New password is required"}), 400
+    
+    if not user_id and not user_idno:
+        return jsonify({"error": "User ID or ID number is required"}), 400
+    
+    conn, cursor = None, None
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        cursor = conn.cursor()
+        
+        # Hash the new password
+        hashed_password = generate_password_hash(new_password)
+        
+        # Update the user's password
+        if user_id:
+            cursor.execute("UPDATE users SET password = %s WHERE id = %s", (hashed_password, user_id))
+        else:
+            cursor.execute("UPDATE users SET password = %s WHERE idno = %s", (hashed_password, user_idno))
+        
+        if cursor.rowcount == 0:
+            return jsonify({"error": "User not found"}), 404
+            
+        conn.commit()
+        
+        return jsonify({
+            "success": True,
+            "message": "Password updated successfully"
+        })
+        
+    except Exception as e:
+        print(f"Error changing user password: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
 if __name__ == '__main__':
     # Add mysql-connector-python to requirements.txt if not already there
     try:
